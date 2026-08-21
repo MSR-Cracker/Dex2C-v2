@@ -1,0 +1,5 @@
+com.apkempire.nativeui.ApkEmpire
+com.apkempire.nativeui.ApkEmpireDialog
+com.apkempire.nativeui.ApkEmpireDialog$CloseListener
+com.apkempire.nativeui.ApkEmpireDialog$SubscribeListener
+abdelrahman.wifianalyzerpro.MainActivity
