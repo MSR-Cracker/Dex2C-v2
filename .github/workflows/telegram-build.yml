@@ -1,0 +1,314 @@
+name: Telegram Dex2C Build
+
+run-name: Telegram Dex2C - ${{ inputs.app_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_path:
+        description: "Path of APK"
+        required: true
+        type: string
+
+      filter_path:
+        description: "Path of filter"
+        required: true
+        type: string
+
+      app_name:
+        description: "Application name"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK tools
+        run: |
+          sdkmanager "platform-tools" \
+                     "build-tools;35.0.0" \
+                     "ndk;29.0.14206865"
+
+      - name: Verify NDK
+        run: |
+          NDK_DIR="$ANDROID_HOME/ndk/29.0.14206865"
+
+          if [ ! -f "$NDK_DIR/ndk-build" ]; then
+            echo "ERROR: ndk-build not found"
+            exit 1
+          fi
+
+          echo "NDK:"
+          "$NDK_DIR/ndk-build" --version
+
+      - name: Prepare apksigner
+        run: |
+          mkdir -p tools
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
+            -path "*/lib/apksigner.jar" \
+            | sort -V \
+            | tail -n 1)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner.jar not found"
+            exit 1
+          fi
+
+          cp "$APKSIGNER" tools/apksigner.jar
+
+          echo "Using:"
+          ls -lh tools/apksigner.jar
+
+      - name: Prepare Telegram input
+        env:
+          APP_PATH: ${{ inputs.app_path }}
+          FILTER_PATH: ${{ inputs.filter_path }}
+        run: |
+          echo "APK path:"
+          echo "$APP_PATH"
+
+          echo "Filter path:"
+          echo "$FILTER_PATH"
+
+          if [ ! -f "$APP_PATH" ]; then
+            echo "ERROR: APK was not found"
+            exit 1
+          fi
+
+          if [ ! -f "$FILTER_PATH" ]; then
+            echo "ERROR: filter was not found"
+            exit 1
+          fi
+
+          mkdir -p input
+
+          cp "$APP_PATH" input/app.apk
+          cp "$FILTER_PATH" filter.txt
+
+          echo ""
+          echo "Input APK:"
+          ls -lh input/app.apk
+
+          echo ""
+          echo "Filter:"
+          cat filter.txt
+
+      - name: Configure dxx.cfg
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          path = "dxx.cfg"
+
+          ndk_dir = os.path.join(
+              os.environ["ANDROID_HOME"],
+              "ndk",
+              "29.0.14206865"
+          )
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          data["ndk_dir"] = ndk_dir
+
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(data, f, indent=4)
+
+          print("Configured NDK:")
+          print(data["ndk_dir"])
+          PY
+
+          cat dxx.cfg
+
+      - name: Build Dex2C
+        run: |
+          chmod +x java/build.sh
+          sh java/build.sh
+
+          if [ ! -f dex2cxx.jar ]; then
+            echo "ERROR: dex2cxx.jar was not created"
+            exit 1
+          fi
+
+          ls -lh dex2cxx.jar
+
+      - name: Run Dex2C
+        run: |
+          mkdir -p output
+
+          echo "Starting Dex2C..."
+
+          java -jar dex2cxx.jar \
+            -a input/app.apk \
+            -o output/app_protected.apk \
+            --filter filter.txt
+
+          if [ ! -f output/app_protected.apk ]; then
+            echo "ERROR: Dex2C did not generate output/app_protected.apk"
+            exit 1
+          fi
+
+          echo "Dex2C output:"
+          ls -lh output/app_protected.apk
+
+      - name: Create Protection README
+        run: |
+          cat > output/README.md <<'EOF'
+          # Dex2C Protected Application
+
+          This application has been protected using Dex2C by 0Dex.
+
+          Dex2C is a Dex-to-C++ protection and transformation tool designed to help protect Android applications.
+
+          ## Note
+
+          Dex2C is still under development.
+
+          Features, behavior, compatibility, and protection mechanisms may change in future versions.
+          EOF
+
+          echo "README created:"
+          cat output/README.md
+
+      - name: Add README inside APK
+        run: |
+          rm -rf apk_tmp
+          mkdir -p apk_tmp
+
+          unzip -q output/app_protected.apk -d apk_tmp
+
+          mkdir -p apk_tmp/assets
+
+          cp output/README.md apk_tmp/assets/README.md
+
+          cd apk_tmp
+          zip -qr ../app_protected_with_readme.apk .
+          cd ..
+
+          mv app_protected_with_readme.apk output/app_protected.apk
+
+          echo "README embedded inside APK:"
+          unzip -l output/app_protected.apk | grep "assets/README.md"
+
+      - name: Zipalign APK
+        run: |
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+
+          if [ ! -f "$ZIPALIGN" ]; then
+            echo "ERROR: zipalign not found"
+            exit 1
+          fi
+
+          "$ZIPALIGN" -f -p 4 \
+            output/app_protected.apk \
+            output/app_protected_aligned.apk
+
+          mv output/app_protected_aligned.apk output/app_protected.apk
+
+          echo "APK aligned successfully."
+
+      - name: Generate signing keystore
+        run: |
+          keytool \
+            -genkeypair \
+            -v \
+            -keystore tools/0dex-release.keystore \
+            -alias 0dex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass 0dex123456 \
+            -keypass 0dex123456 \
+            -dname "CN=0Dex, OU=0Dex, O=0Dex, L=Unknown, ST=Unknown, C=US"
+
+          echo "Keystore generated."
+
+      - name: Sign APK
+        run: |
+          java -jar tools/apksigner.jar sign \
+            --ks tools/0dex-release.keystore \
+            --ks-key-alias 0dex \
+            --ks-pass pass:0dex123456 \
+            --key-pass pass:0dex123456 \
+            --out output/app_protected_signed.apk \
+            output/app_protected.apk
+
+          mv output/app_protected_signed.apk output/app_protected.apk
+
+          echo "APK signed successfully."
+
+      - name: Verify APK signature
+        run: |
+          java -jar tools/apksigner.jar verify \
+            --verbose \
+            output/app_protected.apk
+
+      - name: Verify README inside APK
+        run: |
+          echo "Checking README inside APK..."
+
+          if ! unzip -l output/app_protected.apk | grep -q "assets/README.md"; then
+            echo "ERROR: assets/README.md was not found inside APK"
+            exit 1
+          fi
+
+          echo "README successfully embedded."
+
+          echo ""
+          echo "README content:"
+          unzip -p output/app_protected.apk assets/README.md
+
+      - name: Verify final output
+        run: |
+          echo "Final output:"
+          ls -lah output/
+
+          if [ ! -f output/app_protected.apk ]; then
+            echo "ERROR: output/app_protected.apk was not generated"
+            exit 1
+          fi
+
+          if [ ! -f output/README.md ]; then
+            echo "ERROR: output/README.md was not generated"
+            exit 1
+          fi
+
+          echo ""
+          echo "Final APK:"
+          ls -lh output/app_protected.apk
+
+          echo ""
+          echo "External README:"
+          ls -lh output/README.md
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dex2c_app
+          path: |
+            output/app_protected.apk
+            output/README.md
+          if-no-files-found: error
+          retention-days: 1
