@@ -1,0 +1,2 @@
+com.a0soft.gphone.acc.dash.DashboardWnd
+com.apkmanager.dialog.abror
