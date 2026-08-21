@@ -51,7 +51,12 @@ public final class Main {
                 .collect(Collectors.toList());
 
         if (options.outputPath != null) {
-            new DccPipeline(Path.of(".")).run(options.inputPath, options.outputPath, wrappable);
+            new DccPipeline(Path.of(".")).run(
+                    options.inputPath,
+                    options.outputPath,
+                    wrappable,
+                    options.resourceFilterPath
+            );
             System.out.printf("Wrote protected APK/DEX: %s%n", options.outputPath);
         }
 
