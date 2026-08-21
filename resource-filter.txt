@@ -1,0 +1,7 @@
+# Resource names to protect
+# One resource name per line
+
+app_name
+api_url
+secret_message
+welcome_text
