@@ -6,16 +6,20 @@ final class CliOptions {
     final Path inputPath;
     final Path outputPath;
     final Path filterPath;
+    final Path resourceFilterPath;
     final Path reportPath;
     final boolean listOnly;
     final boolean help;
     final boolean autoSetup;
 
-    private CliOptions(Path inputPath, Path outputPath, Path filterPath, Path reportPath,
+    private CliOptions(Path inputPath, Path outputPath,
+                       Path filterPath, Path resourceFilterPath,
+                       Path reportPath,
                        boolean listOnly, boolean help, boolean autoSetup) {
         this.inputPath = inputPath;
         this.outputPath = outputPath;
         this.filterPath = filterPath;
+        this.resourceFilterPath = resourceFilterPath;
         this.reportPath = reportPath;
         this.listOnly = listOnly;
         this.help = help;
@@ -26,6 +30,7 @@ final class CliOptions {
         Path input = null;
         Path output = null;
         Path filter = null;
+        Path resourceFilter = null;
         Path report = null;
         boolean listOnly = false;
         boolean help = false;
@@ -45,6 +50,9 @@ final class CliOptions {
                     break;
                 case "--filter":
                     filter = Path.of(requireValue(args, ++i, arg));
+                    break;
+                case "--resource-filter":
+                    resourceFilter = Path.of(requireValue(args, ++i, arg));
                     break;
                 case "--report":
                     report = Path.of(requireValue(args, ++i, arg));
@@ -73,11 +81,32 @@ final class CliOptions {
             filter = Path.of("filter.txt");
         }
 
-        return new CliOptions(input, output, filter, report, listOnly, help, autoSetup);
+        if (resourceFilter == null &&
+            java.nio.file.Files.exists(Path.of("resource-filter.txt"))) {
+            resourceFilter = Path.of("resource-filter.txt");
+        }
+
+        return new CliOptions(
+                input,
+                output,
+                filter,
+                resourceFilter,
+                report,
+                listOnly,
+                help,
+                autoSetup
+        );
     }
 
     static void printHelp() {
-        System.out.println("Usage: java -jar dex2cxx.jar -a input.apk [-o output.apk] [--filter filter.txt] [--report methods.txt] [--list-only]");
+        System.out.println(
+                "Usage: java -jar dex2cxx.jar -a input.apk " +
+                "[-o output.apk] " +
+                "[--filter filter.txt] " +
+                "[--resource-filter resource-filter.txt] " +
+                "[--report methods.txt] " +
+                "[--list-only]"
+        );
         System.out.println("       java -jar dex2cxx.jar -auto");
     }
 
