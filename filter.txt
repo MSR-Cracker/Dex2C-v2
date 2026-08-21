@@ -1,0 +1,2 @@
+# Protect all methods in all classes
+com.test1.MainActivity
