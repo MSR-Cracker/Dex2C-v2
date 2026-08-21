@@ -1,6 +1,7 @@
 package com.dex2c.pipeline;
 
 import com.dex2c.model.MethodInfo;
+import com.dex2c.resource.ResourceFilter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,7 +23,8 @@ public final class DccPipeline {
     public void run(
             Path inputApk,
             Path outputApk,
-            List<MethodInfo> methods) throws Exception {
+            List<MethodInfo> methods,
+            Path resourceFilterPath) throws Exception {
 
         if (!inputApk.getFileName().toString().endsWith(".apk")) {
             Files.copy(
@@ -49,6 +51,15 @@ public final class DccPipeline {
         ToolConfig config =
                 ToolConfig.load(root, tmp);
 
+        ResourceFilter resourceFilter =
+                ResourceFilter.load(resourceFilterPath);
+
+        System.out.println(
+                "Resource filter: "
+                        + resourceFilter.size()
+                        + " resource name(s)"
+        );
+
         Path decompiled =
                 tmp.resolve("smali-work");
 
@@ -66,6 +77,15 @@ public final class DccPipeline {
          */
         Map<Integer, String> nativeStrings =
                 new LinkedHashMap<>();
+
+        /*
+         * Resource protection is intentionally not performed
+         * here yet.
+         *
+         * The ResourceFilter is loaded above and will be
+         * connected to the resources.arsc processor in the
+         * next implementation step.
+         */
 
         try {
 
